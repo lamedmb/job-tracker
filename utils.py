@@ -7,7 +7,6 @@ from google.oauth2.service_account import Credentials
 import time
 from datetime import date
 
-# Load API key into environment
 os.environ["ANTHROPIC_API_KEY"] = st.secrets.get("ANTHROPIC_API_KEY", "")
 
 SCOPES = [
@@ -36,15 +35,25 @@ def get_sheet():
 
 @st.cache_data(ttl=30)
 def load_data() -> pd.DataFrame:
-    data = get_sheet().get_all_records()
+    try:
+        data = get_sheet().get_all_records(expected_headers=COLUMNS)
+    except Exception:
+        raw = get_sheet().get_all_values()
+        if len(raw) <= 1:
+            return pd.DataFrame(columns=COLUMNS)
+        headers = raw[0]
+        data = [dict(zip(headers, row)) for row in raw[1:]]
     if not data:
         return pd.DataFrame(columns=COLUMNS)
     df = pd.DataFrame(data)
-    df["date_applied"] = pd.to_datetime(df["date_applied"], errors="coerce")
-    df["date_updated"] = pd.to_datetime(df["date_updated"], errors="coerce")
-    df["cover_letter"]    = df["cover_letter"].astype(str).str.upper() == "TRUE"
-    df["referral"]        = df["referral"].astype(str).str.upper() == "TRUE"
-    df["follow_up_sent"]  = df["follow_up_sent"].astype(str).str.upper() == "TRUE"
+    for col in COLUMNS:
+        if col not in df.columns:
+            df[col] = ""
+    df["date_applied"]  = pd.to_datetime(df["date_applied"],  errors="coerce")
+    df["date_updated"]  = pd.to_datetime(df["date_updated"],  errors="coerce")
+    df["cover_letter"]   = df["cover_letter"].astype(str).str.upper()   == "TRUE"
+    df["referral"]       = df["referral"].astype(str).str.upper()       == "TRUE"
+    df["follow_up_sent"] = df["follow_up_sent"].astype(str).str.upper() == "TRUE"
     for col in ["job_post_age_days", "skills_match", "response_time_days"]:
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0).astype(int)
@@ -106,11 +115,7 @@ def conversion_rate(df: pd.DataFrame, group_col: str) -> pd.DataFrame:
     return g.sort_values("rate", ascending=False)
 
 
-
-
 # ── ATS Matcher ────────────────────────────────────────────────────────────
-
-import re
 
 STOP = {
     'and','the','for','with','you','our','are','this','that','will','have',
@@ -150,7 +155,6 @@ HARD_PHRASES = [
     'portfolio management','asset management','due diligence','financial analysis'
 ]
 
-# Feature 6: Red flag patterns
 RED_FLAGS = [
     {
         "pattern": r"must have (the )?right to work|no sponsorship|cannot sponsor|won't sponsor|does not offer.*sponsor",
@@ -205,8 +209,8 @@ SECTION_TIPS = {
 
 
 def _stem(w: str) -> str:
-    for suffix in ['ing','tion','ation','ment','ness','ive','ous','ize','ise',
-                   'ies','ied','ed','er','ly','s']:
+    for suffix in ['ing', 'tion', 'ation', 'ment', 'ness', 'ive', 'ous',
+                   'ize', 'ise', 'ies', 'ied', 'ed', 'er', 'ly', 's']:
         if w.endswith(suffix) and len(w) - len(suffix) >= 3:
             return w[:-len(suffix)]
     return w
@@ -261,14 +265,12 @@ def _effort_label(kw: str, missing_phrases: list) -> str:
 
 
 def ats_match(cv: str, jd: str) -> dict:
-    # Phrase score
     cv_phrases = _extract_phrases(cv)
     jd_phrases = _extract_phrases(jd)
     matched_phrases = sorted(cv_phrases & jd_phrases)
     missing_phrases = sorted(jd_phrases - cv_phrases)
     phrase_score = round(len(matched_phrases) / max(len(jd_phrases), 1) * 100)
 
-    # Keyword frequency score
     cv_tokens = _tokenize(cv)
     jd_tokens = _tokenize(jd)
     cv_stems  = set(cv_tokens)
@@ -282,31 +284,28 @@ def ats_match(cv: str, jd: str) -> dict:
     total_jd_w = len(high_pri) * 2 + len(med_pri)
     kw_score   = round(total_w / max(total_jd_w, 1) * 100)
 
-    # Section score
-    cv_sec  = _detect_sections(cv)
-    jd_sec  = _detect_sections(jd)
-    cv_sec_tok = _tokenize(cv_sec['skills'] + ' ' + cv_sec['experience'])
-    jd_sec_tok = _tokenize(jd_sec['skills'] + ' ' + jd_sec['other'] + ' ' + jd_sec['experience'])
+    cv_sec      = _detect_sections(cv)
+    jd_sec      = _detect_sections(jd)
+    cv_sec_tok  = _tokenize(cv_sec['skills'] + ' ' + cv_sec['experience'])
+    jd_sec_tok  = _tokenize(jd_sec['skills'] + ' ' + jd_sec['other'] + ' ' + jd_sec['experience'])
     jd_sec_keys = set(jd_sec_tok)
     sec_matched = jd_sec_keys & set(cv_sec_tok)
-    sec_score = round(len(sec_matched) / max(len(jd_sec_keys), 1) * 100) if jd_sec_keys else kw_score
+    sec_score   = round(len(sec_matched) / max(len(jd_sec_keys), 1) * 100) if jd_sec_keys else kw_score
 
     overall = min(100, round(phrase_score * 0.35 + kw_score * 0.30 + sec_score * 0.20 + kw_score * 0.15))
 
-    # Recover original word forms
-    all_miss  = miss_high | miss_med
-    miss_orig = _orig_words(jd, all_miss)
+    all_miss   = miss_high | miss_med
+    miss_orig  = _orig_words(jd, all_miss)
     match_orig = _orig_words(jd, match_high | match_med)
 
     miss_high_w = [miss_orig.get(s, s) for s in sorted(miss_high)][:12]
     miss_med_w  = [miss_orig.get(s, s) for s in sorted(miss_med)][:10]
     match_w     = [match_orig.get(s, s) for s in sorted(match_high | match_med)][:20]
 
-    # Feature 3: Prioritised gaps
     all_miss_words = list(dict.fromkeys(missing_phrases + miss_high_w + miss_med_w))
     prioritised_gaps = []
     for kw in all_miss_words[:18]:
-        freq = jd_tokens.get(_stem(kw.split()[0]), 1)
+        freq      = jd_tokens.get(_stem(kw.split()[0]), 1)
         is_phrase = kw in missing_phrases
         is_high   = kw in miss_high_w
         priority  = (3 if is_phrase else 0) + (2 if is_high else 1) + min(freq, 3)
@@ -317,17 +316,15 @@ def ats_match(cv: str, jd: str) -> dict:
         prioritised_gaps.append({"kw": kw, "why": why, "effort": effort, "priority": priority})
     prioritised_gaps.sort(key=lambda x: -x["priority"])
 
-    # Feature 4: Section placement
     section_placements = []
     for g in prioritised_gaps[:10]:
-        kw = g["kw"]
-        kw_stem = _stem(kw.split()[0])
+        kw        = g["kw"]
+        kw_stem   = _stem(kw.split()[0])
         cv_target = "skills" if _tokenize(jd_sec["skills"]).get(kw_stem) else "experience"
         if any(x in kw for x in ["degree", "certif", "qualification"]):
             cv_target = "education"
         section_placements.append({"kw": kw, "cv_target": cv_target, "tip": SECTION_TIPS[cv_target]})
 
-    # Feature 6: Red flags
     red_flags = []
     for f in RED_FLAGS:
         if re.search(f["pattern"], jd, re.IGNORECASE):
