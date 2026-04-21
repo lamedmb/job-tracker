@@ -163,6 +163,7 @@ with st.form("log_form", clear_on_submit=True):
         cover_letter       = st.checkbox("Cover letter sent?")
         referral           = st.checkbox("Referral?")
         salary_range       = st.text_input("Salary range (optional)", placeholder="e.g. 30-35k")
+        job_url            = st.text_input("Job posting URL (optional)", placeholder="https://...")
 
     notes     = st.text_area("Notes")
     submitted = st.form_submit_button("Add application", type="primary")
@@ -191,6 +192,7 @@ with st.form("log_form", clear_on_submit=True):
                 "response_time_days": response_time_days,
                 "sector":             sector,
                 "company_size":       company_size,
+                "job_url": job_url,
             })
             for key in ["skills_match_score", "ats_result", "cv_for_sim", "jd_for_sim"]:
                 st.session_state.pop(key, None)
