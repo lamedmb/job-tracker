@@ -1,11 +1,14 @@
 import streamlit as st
-from utils import load_data, mark_followup_sent
+from utils import load_data, get_followups, mark_followup_sent
 
 st.header("Follow-ups due")
 
 df = load_data()
 
-from utils import get_followups
+if df.empty or "status" not in df.columns:
+    st.success("No follow-ups due right now.")
+    st.stop()
+
 due = get_followups(df)
 
 if due.empty:

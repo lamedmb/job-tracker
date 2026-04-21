@@ -64,6 +64,9 @@ def mark_followup_sent(app_id: int):
 
 def get_followups(df: pd.DataFrame) -> pd.DataFrame:
     today = pd.Timestamp(date.today())
+    # Drop rows where date_applied didn't parse correctly
+    df = df.dropna(subset=["date_applied"])
+    df = df[df["date_applied"].apply(lambda x: isinstance(x, pd.Timestamp))]
     mask = (
         (df["status"] == "Applied") &
         (~df["follow_up_sent"]) &

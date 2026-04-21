@@ -4,7 +4,8 @@ from utils import load_data, conversion_rate
 st.header("Strategy insights")
 
 df = load_data()
-if df.empty:
+
+if df.empty or "status" not in df.columns:
     st.info("Add at least 10 applications to start seeing insights.")
     st.stop()
 
