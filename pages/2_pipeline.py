@@ -40,7 +40,8 @@ def highlight_sponsor(row):
 display_cols = [c for c in [
     "company", "role_title", "track", "source", "status",
     "date_applied", "sponsor_confirmed", "cv_tailored",
-    "skills_match", "job_post_age_days", "sector", "company_size", "referral"
+    "skills_match", "job_post_age_days", "sector", "company_size",
+    "referral", "job_url"
 ] if c in filtered.columns]
 
 styled = filtered[display_cols].style.apply(highlight_sponsor, axis=1)

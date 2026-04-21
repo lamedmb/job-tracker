@@ -21,7 +21,7 @@ COLUMNS = [
     "cover_letter", "referral", "salary_range", "notes",
     "follow_up_sent", "rejection_reason",
     "job_post_age_days", "skills_match", "response_time_days",
-    "sector", "company_size"
+    "sector", "company_size", "job_url"
 ]
 
 
